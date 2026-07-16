@@ -1,0 +1,5 @@
+Name,DisplayName,ResourceType,Capacity,Location,BookingWindowDays
+HotelOffice-12A,Hotel Office 12A - 3rd Floor,HotelOffice,1,"Building A, Floor 3",14
+HotelOffice-12B,Hotel Office 12B - 3rd Floor,HotelOffice,1,"Building A, Floor 3",14
+Cubicle-204,Cubicle 204 - 2nd Floor,CubicleOffice,1,"Building A, Floor 2",14
+Cubicle-205,Cubicle 205 - 2nd Floor,CubicleOffice,1,"Building A, Floor 2",

@@ -19,9 +19,11 @@ Two resource categories, each backed by Exchange Online room mailboxes:
 - **Hotel Office** — hot-desking offices, booked ad hoc by any employee.
 - **Cubicle Office** — cubicle-style desks, booked ad hoc by any employee.
 
-**Booking window:** Employees may reserve either resource type **up to 14 days (2 weeks) in advance** — no further out. This is enforced in two places:
+**Booking window:** Employees may reserve either resource type **up to a configurable number of days in advance — 14 days (2 weeks) by default**. This is enforced in two places:
 1. **Microsoft Bookings** governs the actual booking UX/policy employees interact with.
-2. **`Set-CalendarProcessing -BookingWindowInDays 14`** on the underlying room mailbox is a hard backstop, in case a booking is attempted directly against the mailbox calendar (e.g. via Outlook room finder) rather than through Bookings.
+2. **`Set-CalendarProcessing -BookingWindowInDays`** on the underlying room mailbox is a hard backstop, in case a booking is attempted directly against the mailbox calendar (e.g. via Outlook room finder) rather than through Bookings.
+
+The window is a `-BookingWindowDays` parameter (default `14`) on both `New-RoomResource.ps1` (applied at creation time) and `Set-RoomBookingPolicy.ps1` (to change it later), not a hardcoded value — so it can be overridden globally or per room without editing the scripts.
 
 **Room mailbox → Bookings staff pattern:** A normal Bookings business associates *people* (staff) with *services*, not physical resources. To repurpose it for room booking, each room mailbox is added as Bookings "staff" (via Graph `solutions/bookingBusinesses/{id}/staffMembers`), and a Bookings "service" represents the act of reserving that room type. Employees pick a room (staff member) and a time slot the way they'd normally pick a person to meet with.
 
@@ -50,10 +52,20 @@ msbookings/
 ├── CLAUDE.md
 ├── README.md
 ├── scripts/
-│   ├── New-RoomResource.ps1          ← creates a room mailbox (Hotel Office | Cubicle Office)
-│   ├── Set-RoomBookingPolicy.ps1     ← applies the 14-day booking window + calendar processing rules
+│   ├── New-RoomResource.ps1          ← creates room mailbox(es) (Hotel Office | Cubicle Office); -CsvPath for bulk
+│   ├── Set-RoomBookingPolicy.ps1     ← (re)applies the booking window + calendar processing rules; -CsvPath for bulk
 │   ├── New-BookingsStaffLink.ps1     ← registers a room mailbox as staff on the Bookings business
 │   └── Get-RoomInventory.ps1         ← reports current room resources and their configuration
 └── docs/
-    └── architecture.md
+    ├── architecture.md
+    └── sample-rooms.csv              ← example bulk-import file for -CsvPath
 ```
+
+## Bulk Provisioning via CSV
+
+`New-RoomResource.ps1` and `Set-RoomBookingPolicy.ps1` both accept `-CsvPath` as an alternative to their single-room parameters, for provisioning/updating many rooms in one run. See `docs/sample-rooms.csv` for the format:
+
+- **`New-RoomResource.ps1 -CsvPath`** required columns: `Name`, `ResourceType`. Optional: `DisplayName`, `Capacity`, `Location`, `BookingWindowDays` (per-row override of `-BookingWindowDays`).
+- **`Set-RoomBookingPolicy.ps1 -CsvPath`** required column: `Identity` (or `Name`, so the same CSV can be reused). Optional: `BookingWindowDays` (per-row override).
+
+A row that fails (e.g. duplicate name, mailbox not found) is reported as a warning and skipped — the rest of the file still runs.
