@@ -39,7 +39,7 @@ No app registration or certificate-based app-only auth is set up yet. If this fr
 
 ## Current State
 
-Bootstrapped. No scripts implemented yet.
+All four core scripts implemented: `New-RoomResource.ps1`, `Set-RoomBookingPolicy.ps1`, `New-BookingsStaffLink.ps1`, `Get-RoomInventory.ps1`. Not yet tested end-to-end against a live tenant.
 
 ---
 
