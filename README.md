@@ -19,8 +19,16 @@ See [CLAUDE.md](./CLAUDE.md) for the full architecture and design rationale.
 | --- | --- |
 | `scripts/New-RoomResource.ps1` | Creates a room mailbox, tags it, and applies the booking window. Supports `-CsvPath` for bulk creation. |
 | `scripts/Set-RoomBookingPolicy.ps1` | (Re)applies the booking window to existing rooms, by identity, by resource type, or in bulk via `-CsvPath`. |
+| `scripts/New-BookingsService.ps1` | Defines the Bookings service for a resource category (e.g. "Hotel Office") and sets its booking window. |
 | `scripts/New-BookingsStaffLink.ps1` | Registers a room mailbox as a staff member on a Microsoft Bookings business. |
 | `scripts/Get-RoomInventory.ps1` | Reports current room resources and their configuration. |
+
+### Setup order
+
+1. Create the Bookings business itself (Bookings admin UI, or `New-MgBookingBusiness` — not yet scripted here).
+2. `New-RoomResource.ps1` — create the room mailboxes.
+3. `New-BookingsService.ps1` — once per resource category, to define the bookable service and its window.
+4. `New-BookingsStaffLink.ps1` — once per room, to link it in as staff.
 
 ### Bulk creation via CSV
 
@@ -37,7 +45,10 @@ The advance-booking window is a parameter, not a hardcoded value:
 ```powershell
 ./scripts/New-RoomResource.ps1 -Name "Cubicle-206" -ResourceType CubicleOffice -BookingWindowDays 14
 ./scripts/Set-RoomBookingPolicy.ps1 -ResourceType HotelOffice -BookingWindowDays 21
+./scripts/New-BookingsService.ps1 -BookingBusinessId "rooms@contoso.com" -ResourceType HotelOffice -BookingWindowDays 21
 ```
+
+Keep the value consistent across all three — `New-BookingsService.ps1` sets the limit employees actually experience in the Bookings UI, while the mailbox-side window is a backstop.
 
 ## Requirements
 
@@ -47,4 +58,4 @@ The advance-booking window is a parameter, not a hardcoded value:
 
 ## Status
 
-All four core scripts implemented. Not yet tested end-to-end against a live tenant.
+All five core scripts implemented. Not yet tested end-to-end against a live tenant.
