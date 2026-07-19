@@ -13,6 +13,13 @@
     (New-BookingsStaffLink.ps1, Get-RoomInventory.ps1) use to identify rooms
     belonging to this framework and their category.
 
+    After creating the mailbox, the script also calls Set-Place to populate the
+    mailbox's associated Place object (Building, Floor, Capacity, wheelchair
+    accessibility), which powers structured room-finder filtering in Outlook/Teams.
+    The Place object backing a brand-new room mailbox can take time to replicate,
+    so a failure here only emits a warning (with the command to re-run manually)
+    rather than aborting the rest of the room's setup.
+
     Rooms can be created one at a time via -Name/-ResourceType/etc., or in bulk
     via -CsvPath. This script does not link the room into Microsoft Bookings
     (see New-BookingsStaffLink.ps1).
@@ -34,12 +41,27 @@
 .PARAMETER Location
     Optional free-text location, e.g. "Building A, Floor 3". Stored on the mailbox Office field.
 
+.PARAMETER Building
+    Optional building identifier for the room (e.g. "Building A"), written to the mailbox's
+    associated Place object via Set-Place. Used for structured room-finder filtering - distinct
+    from -Location, which is a free-text value stored on the mailbox's Office property. Nothing
+    enforces consistency between the two, so keep them logically aligned.
+
+.PARAMETER Floor
+    Optional floor for the room (e.g. "3"), written to the mailbox's associated Place object via
+    Set-Place. Should be numeric, matching Set-Place's underlying -Floor parameter.
+
+.PARAMETER IsWheelChairAccessible
+    Switch indicating the room is wheelchair accessible. Written to the mailbox's associated
+    Place object via Set-Place. When using -CsvPath, set the IsWheelChairAccessible column to
+    "true"/"false" instead of using this switch.
+
 .PARAMETER CsvPath
     Path to a CSV file describing multiple rooms to create in bulk, instead of -Name/-ResourceType/etc.
     Required columns: Name, ResourceType. Optional columns: DisplayName, Capacity, Location,
-    BookingWindowDays (overrides -BookingWindowDays for that row only). See docs/sample-rooms.csv
-    for an example. Rows that fail (e.g. duplicate name) are reported as warnings and skipped;
-    the rest of the file still runs.
+    BookingWindowDays, Building, Floor, IsWheelChairAccessible (overrides the corresponding
+    -Parameter for that row only). See docs/sample-rooms.csv for an example. Rows that fail
+    (e.g. duplicate name) are reported as warnings and skipped; the rest of the file still runs.
 
 .PARAMETER BookingWindowDays
     Maximum number of days in advance the room can be booked. Defaults to 14 (2 weeks),
@@ -52,6 +74,10 @@
 
 .EXAMPLE
     ./New-RoomResource.ps1 -Name "Cubicle-204" -ResourceType CubicleOffice -Capacity 1 -BookingWindowDays 14
+
+.EXAMPLE
+    ./New-RoomResource.ps1 -Name "HotelOffice-12A" -DisplayName "Hotel Office 12A - 3rd Floor" -ResourceType HotelOffice `
+        -Location "Building A, Floor 3" -Building "Building A" -Floor 3 -IsWheelChairAccessible
 
 .EXAMPLE
     ./New-RoomResource.ps1 -CsvPath ./docs/sample-rooms.csv
@@ -77,6 +103,15 @@ param(
     [Parameter(ParameterSetName = 'SingleRoom')]
     [string]$Location,
 
+    [Parameter(ParameterSetName = 'SingleRoom')]
+    [string]$Building,
+
+    [Parameter(ParameterSetName = 'SingleRoom')]
+    [string]$Floor,
+
+    [Parameter(ParameterSetName = 'SingleRoom')]
+    [switch]$IsWheelChairAccessible,
+
     [Parameter(Mandatory, ParameterSetName = 'FromCsv')]
     [ValidateScript({ Test-Path -Path $_ -PathType Leaf })]
     [string]$CsvPath,
@@ -94,6 +129,9 @@ function New-SingleRoomResource {
         [string]$ResourceType,
         [int]$Capacity,
         [string]$Location,
+        [string]$Building,
+        [string]$Floor,
+        [bool]$IsWheelChairAccessible,
         [int]$BookingWindowDays
     )
 
@@ -127,6 +165,25 @@ function New-SingleRoomResource {
         -ResourceCapacity $Capacity `
         -Office $Location
 
+    Write-Host "Setting Place metadata (Building '$Building', Floor '$Floor', Capacity $Capacity, WheelchairAccessible $IsWheelChairAccessible)..." -ForegroundColor Cyan
+    $placeParams = @{
+        Identity               = $mailbox.Identity
+        Capacity               = $Capacity
+        IsWheelChairAccessible = $IsWheelChairAccessible
+        ErrorAction             = 'Stop'
+    }
+    if ($Building) { $placeParams['Building'] = $Building }
+    if ($Floor)    { $placeParams['Floor']    = $Floor }
+
+    $placeMetadataApplied = $true
+    try {
+        Set-Place @placeParams
+    }
+    catch {
+        $placeMetadataApplied = $false
+        Write-Warning "Could not set Place metadata for '$Name' - the Place object for a newly created room mailbox can take time to replicate. Re-run once available: Set-Place -Identity '$($mailbox.Identity)' -Building '$Building' -Floor '$Floor' -Capacity $Capacity -IsWheelChairAccessible `$$IsWheelChairAccessible. Underlying error: $_"
+    }
+
     Write-Host "Applying $BookingWindowDays-day booking window..." -ForegroundColor Cyan
     Set-CalendarProcessing -Identity $mailbox.Identity `
         -AutomateProcessing AutoAccept `
@@ -144,7 +201,12 @@ function New-SingleRoomResource {
 
     Write-Host "Room resource '$Name' created and added to room list '$categoryName'." -ForegroundColor Green
     Get-Mailbox -Identity $mailbox.Identity |
-        Select-Object Name, DisplayName, PrimarySmtpAddress, RecipientTypeDetails, CustomAttribute1, @{Name = 'BookingWindowInDays'; Expression = { $BookingWindowDays } }
+        Select-Object Name, DisplayName, PrimarySmtpAddress, RecipientTypeDetails, CustomAttribute1, `
+            @{Name = 'BookingWindowInDays'; Expression = { $BookingWindowDays } }, `
+            @{Name = 'Building'; Expression = { $Building } }, `
+            @{Name = 'Floor'; Expression = { $Floor } }, `
+            @{Name = 'IsWheelChairAccessible'; Expression = { $IsWheelChairAccessible } }, `
+            @{Name = 'PlaceMetadataApplied'; Expression = { $placeMetadataApplied } }
 }
 
 # Reuse an existing Exchange Online session if one is already connected.
@@ -172,9 +234,18 @@ if ($PSCmdlet.ParameterSetName -eq 'FromCsv') {
                 $BookingWindowDays
             }
             $rowCapacity = if ($row.PSObject.Properties.Name -contains 'Capacity' -and $row.Capacity) { [int]$row.Capacity } else { 1 }
+            $rowBuilding = if ($row.PSObject.Properties.Name -contains 'Building' -and $row.Building) { $row.Building } else { $null }
+            $rowFloor = if ($row.PSObject.Properties.Name -contains 'Floor' -and $row.Floor) { $row.Floor } else { $null }
+            $rowWheelChairAccessible = if ($row.PSObject.Properties.Name -contains 'IsWheelChairAccessible' -and $row.IsWheelChairAccessible) {
+                [System.Convert]::ToBoolean($row.IsWheelChairAccessible)
+            }
+            else {
+                $false
+            }
 
             New-SingleRoomResource -Name $row.Name -DisplayName $row.DisplayName -ResourceType $row.ResourceType `
-                -Capacity $rowCapacity -Location $row.Location -BookingWindowDays $rowWindow
+                -Capacity $rowCapacity -Location $row.Location -Building $rowBuilding -Floor $rowFloor `
+                -IsWheelChairAccessible $rowWheelChairAccessible -BookingWindowDays $rowWindow
         }
         catch {
             Write-Warning "Failed to create room '$($row.Name)': $_"
@@ -183,5 +254,6 @@ if ($PSCmdlet.ParameterSetName -eq 'FromCsv') {
 }
 else {
     New-SingleRoomResource -Name $Name -DisplayName $DisplayName -ResourceType $ResourceType `
-        -Capacity $Capacity -Location $Location -BookingWindowDays $BookingWindowDays
+        -Capacity $Capacity -Location $Location -Building $Building -Floor $Floor `
+        -IsWheelChairAccessible $IsWheelChairAccessible.IsPresent -BookingWindowDays $BookingWindowDays
 }
