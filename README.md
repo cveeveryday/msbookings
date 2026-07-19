@@ -17,7 +17,7 @@ See [CLAUDE.md](./CLAUDE.md) for the full architecture and design rationale.
 
 | Script | Purpose |
 | --- | --- |
-| `scripts/New-RoomResource.ps1` | Creates a room mailbox, tags it, and applies the booking window. Supports `-CsvPath` for bulk creation. |
+| `scripts/New-RoomResource.ps1` | Creates a room mailbox, tags it, applies the booking window, and sets Place metadata (Building, Floor, Capacity, wheelchair accessibility) via `Set-Place`. Supports `-CsvPath` for bulk creation. |
 | `scripts/Set-RoomBookingPolicy.ps1` | (Re)applies the booking window to existing rooms, by identity, by resource type, or in bulk via `-CsvPath`. |
 | `scripts/New-BookingsService.ps1` | Defines the Bookings service for a resource category (e.g. "Hotel Office") and sets its booking window. |
 | `scripts/New-BookingsStaffLink.ps1` | Registers a room mailbox as a staff member on a Microsoft Bookings business. |
@@ -36,7 +36,7 @@ See [CLAUDE.md](./CLAUDE.md) for the full architecture and design rationale.
 ./scripts/New-RoomResource.ps1 -CsvPath ./docs/sample-rooms.csv
 ```
 
-See [`docs/sample-rooms.csv`](./docs/sample-rooms.csv) for the expected columns (`Name`, `ResourceType`, and optionally `DisplayName`, `Capacity`, `Location`, `BookingWindowDays`).
+See [`docs/sample-rooms.csv`](./docs/sample-rooms.csv) for the expected columns (`Name`, `ResourceType`, and optionally `DisplayName`, `Capacity`, `Location`, `BookingWindowDays`, `Building`, `Floor`, `IsWheelChairAccessible`).
 
 ### Setting the booking window
 
